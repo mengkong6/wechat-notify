@@ -1,0 +1,13 @@
+# Apache 子目录部署：放到项目根目录（wechat-notify/）
+# 已存在的静态文件直接返回，其余请求交给 index.php 前端控制器
+# 前提：Apache 已开启 mod_rewrite，且该目录 AllowOverride All（或 FileInfo）
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [L]
+</IfModule>

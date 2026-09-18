@@ -1,0 +1,16 @@
+services:
+  wechat-notify:
+    build: .
+    image: ghcr.io/mengkong6/wechat-notify:latest
+    container_name: wechat-notify
+    ports:
+      - "${WN_PORT:-7860}:80"
+    environment:
+      WN_DB: /var/www/html/data/app.sqlite
+      WN_POLL_TIMEOUT: ${WN_POLL_TIMEOUT:-60}
+      WN_SEND_TIMEOUT: ${WN_SEND_TIMEOUT:-0.5}
+      # 子目录反代时取消注释，例如 /wechat-notify
+      # WN_BASE: /wechat-notify
+    volumes:
+      - ./data:/var/www/html/data
+    restart: unless-stopped

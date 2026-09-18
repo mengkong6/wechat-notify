@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WeChat Notify · 微信实时通知</title>
+<script>
+  // 子目录部署（无 rewrite）时自动探测 API 入口，供所有 fetch 使用。
+  // 关键：无论页面是从 /wechat-notify/ 还是 /wechat-notify/public/index.html 访问的，
+  // 都要算出「应用根 + /index.php」，然后用 ?_path= 方式调用 API，
+  // 这样 nginx 不需要任何 rewrite 规则。
+  (function () {
+    var p = location.pathname.replace(/\/+$/, '');
+    p = p.replace(/\/(index\.html|index\.php)$/i, '');
+    // 如果当前落在 /public 或 /web 子目录，退回到应用根
+    p = p.replace(/\/(public|web)$/i, '');
+    var base = (p === '' || p === '/') ? '' : p;
+    window.WN_BASE = base;
+    window.WN_API_ENTRY = base + '/index.php';
+  })();
+</script>
+<style>
+  :root {
+    --green: #07c160;
+    --green-dark: #06ad56;
+    --green-deep: #059048;
+    --green-soft: #e8f9f0;
+    --ink: #14261c;
+    --ink-2: #55665c;
+    --ink-3: #93a49a;
+    --line: #e7ede9;
+    --bg: #f0f5f2;
+    --card: #ffffff;
+    --danger: #fa5151;
+    --warn: #fa9d3b;
+    --radius: 16px;
+    --shadow: 0 10px 40px -12px rgba(20, 38, 28, .18);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(1200px 500px at 100% -10%, #d6f5e3 0%, transparent 55%),
+      radial-gradient(900px 500px at -10% 110%, #dceffb 0%, transparent 50%),
+      var(--bg);
+    color: var(--ink);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px 60px;
+  }
+  .app { width: 100%; max-width: 560px; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding: 0 6px; }
+  .brand .logo {
+    width: 44px; height: 44px; border-radius: 12px; flex: none;
+    background: linear-gradient(135deg, #07c160, #06a653);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 20px -6px rgba(7, 193, 96, .55);
+  }
+  .brand .logo svg { width: 24px; height: 24px; }
+  .brand .name { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  .brand .sub { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px;
+    border: 1px solid rgba(255,255,255,.6);
+    animation: rise .4s cubic-bezier(.22,.9,.35,1);
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { font-size: 14px; color: var(--ink-2); margin: 0 0 24px; line-height: 1.6; }
+
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 7px; color: var(--ink-2); }
+  input, textarea {
+    width: 100%; font-size: 15px; color: var(--ink);
+    padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+    outline: none; background: #fbfdfc; transition: border-color .15s, box-shadow .15s, background .15s;
+    font-family: inherit;
+  }
+  input:focus, textarea:focus { border-color: var(--green); background: #fff; box-shadow: 0 0 0 4px rgba(7,193,96,.1); }
+  textarea { min-height: 96px; resize: vertical; line-height: 1.6; }
+  input::placeholder, textarea::placeholder { color: var(--ink-3); }
+
+  .btn {
+    width: 100%; padding: 13px 16px; font-size: 16px; font-weight: 600; cursor: pointer;
+    border: 0; border-radius: 12px; color: #fff;
+    background: linear-gradient(135deg, #07c160, #06a653);
+    transition: transform .06s ease, box-shadow .2s, opacity .2s, background .2s;
+    box-shadow: 0 8px 20px -8px rgba(7,193,96,.6);
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn:hover:not(:disabled) { box-shadow: 0 10px 24px -8px rgba(7,193,96,.7); }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+  .btn.ghost { background: #fff; color: var(--green-dark); border: 1.5px solid var(--green); box-shadow: none; }
+  .btn.ghost:hover:not(:disabled) { background: var(--green-soft); }
+  .btn.danger { background: #fff; color: var(--danger); border: 1.5px solid #f3c6c6; box-shadow: none; }
+  .btn.sm { width: auto; padding: 9px 14px; font-size: 13px; }
+
+  .row { display: flex; gap: 10px; }
+  .row .btn { flex: 1; }
+
+  .link { display: inline-block; margin-top: 18px; font-size: 14px; color: var(--green-dark); cursor: pointer; font-weight: 600; }
+  .link:hover { text-decoration: underline; }
+  .center { text-align: center; }
+
+  .err { margin-top: 14px; font-size: 13.5px; color: var(--danger); line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+  .ok   { margin-top: 14px; font-size: 13.5px; color: var(--green-dark); line-height: 1.6; word-break: break-all; }
+  .hint { margin-top: 14px; font-size: 13px; color: var(--ink-3); line-height: 1.7; }
+
+  .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px; word-break: break-all; background: #f4f7f5;
+    padding: 10px 12px; border-radius: 10px; color: var(--ink-2);
+  }
+
+  /* 二维码 */
+  .qr-wrap { text-align: center; margin: 8px 0 4px; }
+  .qr-frame {
+    display: inline-block; padding: 14px; background: #fff;
+    border-radius: 18px; border: 1px solid var(--line); position: relative;
+    box-shadow: 0 6px 24px -10px rgba(20,38,28,.25);
+  }
+  .qr-frame img { width: 224px; height: 224px; display: block; border-radius: 6px; }
+  .qr-frame .scan {
+    position: absolute; left: 14px; right: 14px; top: 14px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, #07c160, transparent);
+    animation: scan 2.2s ease-in-out infinite;
+  }
+  @keyframes scan { 0%,100% { top: 16px; } 50% { top: calc(100% - 18px); } }
+  .qr-status { font-size: 14px; font-weight: 600; margin-top: 12px; }
+  .qr-status.wait { color: var(--ink-2); }
+  .qr-status.scaned { color: var(--warn); }
+  .qr-status.confirmed { color: var(--green-dark); }
+
+  /* 状态胶囊 */
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .pill.ok { background: var(--green-soft); color: var(--green-deep); }
+  .pill.warn { background: #fff4e6; color: #d97b12; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.ok .dot { animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* 消息列表 */
+  .msgs { margin: 6px 0 14px; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .msgs:empty { display: none; }
+  .msg { display: flex; }
+  .msg .bubble {
+    max-width: 82%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.55;
+    word-break: break-word; position: relative;
+  }
+  .msg.in .bubble { background: #f2f4f3; color: var(--ink); border-bottom-left-radius: 4px; }
+  .msg.out .bubble { background: linear-gradient(135deg, #07c160, #06a653); color: #fff; border-bottom-right-radius: 4px; margin-left: auto; }
+  .msg .meta { font-size: 11px; color: var(--ink-3); margin: 2px 4px 0; }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 12px; gap: 8px; }
+  .toolbar .spacer { flex: 1; }
+
+  /* toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(80px);
+    background: #1d2b22; color: #fff; font-size: 14px; padding: 11px 18px; border-radius: 999px;
+    box-shadow: 0 12px 30px -8px rgba(0,0,0,.4); transition: transform .3s cubic-bezier(.22,.9,.35,1);
+    z-index: 99; max-width: 90vw; text-align: center;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .divider { height: 1px; background: var(--line); margin: 22px 0; }
+
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+    border-radius: 50%; animation: spin .7s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hidden { display: none !important; }
+  @media (max-width: 480px) {
+    body { padding: 20px 10px 40px; }
+    .card { padding: 22px 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9.5 4C6.5 4 4 6 4 8.5c0 1.4.8 2.7 2 3.6L5 14l2.2-1.1c.6.2 1.3.3 2 .3l.5-.5C8.6 11 9 8.7 10.6 7c.3-.4.6-.7 1-1C10.7 4.9 10.2 4 9.5 4Z" fill="#fff" opacity=".9"/><path d="M19.5 10.5c-3 0-5.5 2-5.5 4.5s2.5 4.5 5.5 4.5c.7 0 1.4-.1 2-.3l2.2 1.1-.8-2c1.2-.9 2.1-2.2 2.1-3.3 0-2.5-2.5-4.5-5.5-4.5Z" fill="#fff"/></svg>
+    </div>
+    <div>
+      <div class="name">WeChat Notify · 微信实时通知</div>
+      <div class="sub">基于微信 ClawBot 的实时通知系统</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <!-- 登录 -->
+    <div id="view-login">
+      <h1>欢迎回来</h1>
+      <p class="lead">登录你的账号，开始用微信发消息。</p>
+      <div class="field">
+        <label>账号（微信 user_id）</label>
+        <input id="login-user" placeholder="xxx@im.wechat" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input id="login-pass" type="password" placeholder="注册时设置的密码" autocomplete="current-password">
+      </div>
+      <button class="btn" id="btn-login" onclick="doLogin()">登录</button>
+      <div class="err" id="login-err"></div>
+      <div class="center"><span class="link" onclick="showRegister()">没有账号？去注册 →</span></div>
+    </div>
+
+    <!-- 注册 -->
+    <div id="view-register" class="hidden">
+      <div id="reg-step1">
+        <h1>注册账号</h1>
+        <p class="lead">设置一个密码，然后用你的微信扫码完成绑定。</p>
+        <div class="field">
+          <label>设置密码（≥6 位）</label>
+          <input id="reg-pass" type="password" placeholder="登录与 API 共用此密码" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label>确认密码</label>
+          <input id="reg-pass2" type="password" autocomplete="new-password">
+        </div>
+        <button class="btn" id="btn-reg-qr" onclick="regStart()">下一步：获取二维码</button>
+        <div class="err" id="reg-err1"></div>
+      </div>
+      <div id="reg-step2" class="hidden">
+        <h1>扫码绑定</h1>
+        <p class="lead">打开手机微信，扫描下方二维码并确认登录。</p>
+        <div class="qr-wrap">
+          <div class="qr-frame">
+            <img id="reg-qr" alt="登录二维码">
+            <div class="scan"></div>
+          </div>
+        </div>
+        <div class="center"><span class="qr-status wait" id="reg-status">等待扫码…</span></div>
+        <div class="err" id="reg-err2"></div>
+      </div>
+      <div class="center"><span class="link" onclick="regCancel();show('view-login')">← 返回登录</span></div>
+    </div>
+
+    <!-- 激活 -->
+    <div id="view-activate" class="hidden">
+      <h1>激活账号</h1>
+      <p class="lead">向你的微信 ClawBot 发送<b>任意一条消息</b>，拿到回信凭证后即可发件。</p>
+      <div class="field">
+        <label>你的账号</label>
+        <div class="mono" id="act-userid"></div>
+      </div>
+      <p class="err hidden" id="act-replaced"></p>
+      <div class="center">
+        <span class="pill warn" id="act-pill"><span class="dot"></span><span id="act-tip">正在等待…</span></span>
+      </div>
+      <div style="margin-top:16px">
+        <button class="btn" id="btn-act-retry" onclick="fireReadyOnce()">重新等待</button>
+      </div>
+      <div class="err" id="act-err"></div>
+      <div class="center"><span class="link" onclick="actStop();show('view-login')">← 返回登录</span></div>
+    </div>
+
+    <!-- 发件 -->
+    <div id="view-app" class="hidden">
+      <div class="toolbar">
+        <div>
+          <h1 style="margin:0">发件</h1>
+          <div style="margin-top:6px"><span class="pill ok" id="app-ready"><span class="dot"></span>已激活</span></div>
+        </div>
+        <button class="btn sm danger" onclick="doLogout()">退出</button>
+      </div>
+      <p class="mono" style="margin:0 0 4px" id="app-who"></p>
+      <p class="hint" style="margin-top:6px" id="app-peer"></p>
+
+      <div class="msgs" id="send-msgs"></div>
+
+      <div class="field" style="margin-top:4px">
+        <label>消息内容</label>
+        <textarea id="send-text" placeholder="输入要发送的微信消息…（留空点按钮则仅读取）" oninput="refreshCurl()"></textarea>
+      </div>
+      <div class="row">
+        <button class="btn" id="btn-send" onclick="doSend()">读取 + 发送</button>
+        <button class="btn ghost" id="btn-read" onclick="doRead()">仅读取</button>
+      </div>
+      <div class="err" id="send-err"></div>
+      <button id="btn-go-activate" class="btn ghost hidden" style="margin-top:10px" onclick="showActivate(currentUser)">去激活 →</button>
+
+      <div class="divider"></div>
+      <label>跨域直调 curl（免登录，替换 YOUR_PASSWORD）</label>
+      <div class="mono" id="curl-out" style="overflow-x:auto"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost sm" onclick="copyCurl()">复制 curl</button>
+        <button class="btn ghost sm" onclick="doRead()">刷新消息</button>
+      </div>
+      <p class="hint" id="curl-tip"></p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let regTimer = null, actTimer = null, actAbort = null, currentUser = '';
+let pollSecs = 60;
+
+function show(id) {
+  ['view-login','view-register','view-activate','view-app'].forEach(v => $(v).classList.add('hidden'));
+  $(id).classList.remove('hidden');
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+async function api(path, opts) {
+  const r = await fetch(apiUrl(path), opts);
+  let data = {};
+  try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(data.error || ('请求失败 ' + r.status));
+  return data;
+}
+// 拼接 API 路径：
+//  - 若后端注入了 WN_API_ENTRY（/wechat-notify/index.php），用 ?_path= 方式（无需 rewrite）
+//  - 否则用「当前页面所在目录 + path」的干净路径
+function apiUrl(path) {
+  if (window.WN_API_ENTRY) {
+    const entry = window.WN_API_ENTRY;
+    // 拆分路径与查询串：/api/register/status?qrcode=xxx -> path=/api/register/status, query=qrcode=xxx
+    let p = path, q = '';
+    const qi = path.indexOf('?');
+    if (qi !== -1) { p = path.slice(0, qi); q = path.slice(qi + 1); }
+    const clean = p.charAt(0) === '/' ? p.slice(1) : p;
+    const sep = entry.indexOf('?') === -1 ? '?' : '&';
+    let url = entry + sep + '_path=' + encodeURIComponent(clean);
+    if (q) url += '&' + q;
+    return url;
+  }
+  const base = (window.WN_BASE || '').replace(/\/+$/, '');
+  if (path.charAt(0) !== '/') path = '/' + path;
+  return base + path;
+}
+const post = (path, body) => api(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+
+function fmtTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+// ---------- 登录 ----------
+async function doLogin() {
+  $('login-err').textContent = '';
+  const b = $('btn-login'); b.disabled = true; b.innerHTML = '<span class="spinner"></span>登录中…';
+  try {
+    const d = await post('/api/login', { user_id: $('login-user').value.trim(), password: $('login-pass').value });
+    localStorage.setItem('user_id', d.user_id);
+    $('login-pass').value = '';
+    await enterApp();
+  } catch (e) { $('login-err').textContent = e.message; }
+  b.disabled = false; b.innerHTML = '登录';
+}
+
+// ---------- 注册 ----------
+function showRegister() {
+  actStop();
+  if (regTimer) { clearInterval(regTimer); regTimer = null; }
+  $('reg-step1').classList.remove('hidden');
+  $('reg-step2').classList.add('hidden');
+  $('reg-err1').textContent = ''; $('reg-err2').textContent = '';
+  $('reg-status').textContent = '等待扫码…'; $('reg-status').className = 'qr-status wait';
+  show('view-register');
+}
+function regCancel() {
+  if (regTimer) { clearInterval(regTimer); regTimer = null; }
+  actStop();
+  $('reg-step1').classList.remove('hidden');
+  $('reg-step2').classList.add('hidden');
+}
+
+async function regStart() {
+  $('reg-err1').textContent = '';
+  const p1 = $('reg-pass').value, p2 = $('reg-pass2').value;
+  if (p1.length < 6) { $('reg-err1').textContent = '密码至少 6 位'; return; }
+  if (p1 !== p2) { $('reg-err1').textContent = '两次密码不一致'; return; }
+  const b = $('btn-reg-qr'); b.disabled = true; b.innerHTML = '<span class="spinner"></span>获取中…';
+  try {
+    const d = await post('/api/register/qr', { password: p1 });
+    $('reg-qr').src = 'data:image/png;base64,' + d.qr_png;
+    $('reg-step1').classList.add('hidden');
+    $('reg-step2').classList.remove('hidden');
+    pollRegStatus(d.qrcode, p1);
+  } catch (e) { $('reg-err1').textContent = e.message; }
+  b.disabled = false; b.innerHTML = '下一步：获取二维码';
+}
+
+async function pollRegStatus(qrcode, password) {
+  const sleep = ms => new Promise(r => regTimer = setTimeout(r, ms));
+  while (true) {
+    let d;
+    try {
+      d = await api('/api/register/status?qrcode=' + encodeURIComponent(qrcode));
+    } catch (e) { $('reg-err2').textContent = e.message; await sleep(2000); continue; }
+    const st = $('reg-status');
+    if (d.status === 'scaned') { st.textContent = '已扫码，请在手机上确认登录…'; st.className = 'qr-status scaned'; }
+    else if (d.status === 'expired') { $('reg-err2').textContent = '二维码已过期，请返回重来'; return; }
+    else if (d.status === 'confirmed') { st.textContent = '登录成功！'; st.className = 'qr-status confirmed'; regFinish(password, d); return; }
+    else { st.textContent = '等待扫码…'; st.className = 'qr-status wait'; }
+    await sleep(2000);
+  }
+}
+
+async function regFinish(password, d) {
+  try {
+    const r = await post('/api/register/finish', {
+      password, bot_token: d.bot_token, user_id: d.user_id || '', base_url: d.base_url || ''
+    });
+    localStorage.setItem('user_id', r.user_id || '');
+    $('reg-pass').value = ''; $('reg-pass2').value = '';
+    showActivate(r.user_id, r.overwritten);
+  } catch (e) { $('reg-err2').textContent = e.message; }
+}
+
+// ---------- 激活 ----------
+function showActivate(userId, overwritten) {
+  actStop();
+  $('act-userid').textContent = userId;
+  const rep = $('act-replaced');
+  if (overwritten) { rep.textContent = '已覆盖该微信旧绑定，请用新密码登录'; rep.classList.remove('hidden'); }
+  else { rep.textContent = ''; rep.classList.add('hidden'); }
+  $('act-err').textContent = '';
+  $('btn-act-retry').classList.add('hidden');
+  show('view-activate');
+  fireReadyOnce();
+}
+function actStop() {
+  if (actTimer) { clearInterval(actTimer); actTimer = null; }
+  if (actAbort) { try { actAbort.abort(); } catch (e) {} actAbort = null; }
+}
+
+// 采用「多次短请求」而非单次长请求，避免被网关/代理掐断
+async function fireReadyOnce() {
+  actStop();
+  $('act-err').textContent = '';
+  $('btn-act-retry').classList.add('hidden');
+  $('act-tip').textContent = '正在等待你的第一条微信消息…';
+  $('act-pill').className = 'pill warn';
+  const deadline = Date.now() + pollSecs * 1000;
+  let countdown = null;
+  actTimer = setInterval(() => {
+    const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    $('act-tip').textContent = `正在等待… 剩余 ${left} 秒`;
+  }, 1000);
+  try {
+    while (Date.now() < deadline) {
+      let d;
+      try { d = await api('/api/account/ready'); }
+      catch (e) { if (e.name === 'AbortError') throw e; d = { ready:false }; }
+      if (d && d.ready) { await enterApp(); return; }
+      // 后端单次最多等 ~12s，返回 false 后继续下一轮
+    }
+    throw new Error('未收到微信消息，请确认已发送后重试');
+  } catch (e) {
+    $('act-tip').textContent = '等待超时';
+    $('act-pill').className = 'pill warn';
+    $('act-err').textContent = (e.name === 'AbortError' ? '等待超时，请确认已发送微信消息后重试' : e.message);
+    $('btn-act-retry').classList.remove('hidden');
+  } finally {
+    if (actTimer) { clearInterval(actTimer); actTimer = null; }
+  }
+}
+
+// ---------- 发件 ----------
+async function enterApp(prefetched) {
+  actStop();
+  if (regTimer) { clearInterval(regTimer); regTimer = null; }
+  try {
+    const me = prefetched || await api('/api/me');
+    if (me.poll_timeout > 0) pollSecs = me.poll_timeout;
+    if (!me.ready) { showActivate(me.user_id); return; }
+    currentUser = me.user_id || '';
+    $('app-who').textContent = '当前账号：' + (me.user_id || '');
+    $('app-peer').textContent = me.peer && me.peer !== me.user_id ? '绑定的微信 ClawBot：' + me.peer : '';
+    refreshCurl();
+    show('view-app');
+  } catch (e) { show('view-login'); }
+}
+
+function renderMsgs(msgs, sentText) {
+  const box = $('send-msgs');
+  box.innerHTML = '';
+  if (!msgs || !msgs.length) return;
+  msgs.forEach(m => {
+    const d = document.createElement('div');
+    d.className = 'msg in';
+    const t = fmtTime(m.time_ms);
+    d.innerHTML = `<div class="bubble">${escapeHtml(m.text)}</div><div class="meta">${escapeHtml(m.from || '')}${t ? ' · ' + t : ''}</div>`;
+    box.appendChild(d);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function doSend() {
+  $('send-err').textContent = '';
+  $('btn-go-activate').classList.add('hidden');
+  const b = $('btn-send'); b.disabled = true; b.innerHTML = '<span class="spinner"></span>发送中…';
+  try {
+    const d = await post('/api/send', { text: $('send-text').value });
+    renderMsgs(d.msgs);
+    if (d.error) {
+      $('send-err').textContent = d.error;
+      $('btn-go-activate').classList.remove('hidden');
+    } else if (d.sent) {
+      toast('已发送给 ' + d.to);
+      // 追加一条"我发送的"气泡
+      const t = $('send-text').value.trim();
+      if (t) appendOut(t);
+      $('send-text').value = ''; refreshCurl();
+    }
+  } catch (e) { $('send-err').textContent = e.message; }
+  b.disabled = false; b.innerHTML = '读取 + 发送';
+}
+
+function appendOut(text) {
+  const box = $('send-msgs');
+  const d = document.createElement('div');
+  d.className = 'msg out';
+  d.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function doRead() {
+  $('send-err').textContent = '';
+  try {
+    const d = await post('/api/send', { text: '' });
+    renderMsgs(d.msgs);
+    if (d.msgs && d.msgs.length) toast('收到 ' + d.msgs.length + ' 条消息');
+    else toast('暂无新消息');
+    if (d.error) $('send-err').textContent = d.error;
+  } catch (e) { $('send-err').textContent = e.message; }
+}
+
+async function doLogout() {
+  try { await post('/api/logout', {}); } catch (e) {}
+  $('send-text').value = ''; currentUser = '';
+  show('view-login');
+}
+
+// ---------- curl ----------
+function curlCmd() {
+  const t = $('send-text').value.trim();
+  const payload = JSON.stringify({ user_id: currentUser, password: 'YOUR_PASSWORD', text: t });
+  return "curl -s -X POST " + location.origin + apiUrl('/api/send')
+    + " -H 'Content-Type: application/json'"
+    + " -d '" + payload.replace(/'/g, "'\\''") + "'";
+}
+function refreshCurl() { const el = $('curl-out'); if (el) el.textContent = curlCmd(); }
+async function copyCurl() {
+  const s = curlCmd();
+  try { await navigator.clipboard.writeText(s); toast('已复制到剪贴板'); return; } catch (e) {}
+  const ta = document.createElement('textarea');
+  ta.value = s; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('已复制到剪贴板'); }
+  catch (e) { toast('复制失败，请手动复制'); }
+  ta.remove();
+}
+
+// ---------- 入口 ----------
+(function init() {
+  const saved = localStorage.getItem('user_id');
+  if (saved) $('login-user').value = saved;
+  fetch(apiUrl('/api/me')).then(async r => { if (r.ok) enterApp(await r.json()); });
+})();
+</script>
+</body>
+</html>
